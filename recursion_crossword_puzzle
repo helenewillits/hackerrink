@@ -1,0 +1,328 @@
+#include <assert.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+char* readline();
+
+typedef struct string_info{
+    int index;  // index of the first char of this string in words
+    int length;
+    bool found; // true if placed in crossword already, false if not
+}string_info;
+
+typedef struct blank_info{
+    int x;
+    int y;
+    int length;
+    int orientation; // 0 for Horizontal and 1 for Vertical
+    int string;      // by index of the string in the words array
+}blank_info;
+
+// Please store the size of the string array to be returned in result_count pointer.
+// char a[2][6] = {"hello", "world"};
+// *result_count = 2;
+// return a;
+
+void display_blank_info(blank_info crossword_info[], int this_blank)
+{
+    printf("\tx, y, length, orientation, string\n");
+    printf("\t%d, %d, %d     , %d          , %d\n", 
+        crossword_info[this_blank].x,
+        crossword_info[this_blank].y,
+        crossword_info[this_blank].length,
+        crossword_info[this_blank].orientation,
+        crossword_info[this_blank].string);
+}
+
+// solves the crossword recursively and updates crossword_info
+// finds one reasonable word to add and recurses to see if that orientation works
+// returns 0 for a good solution and 1 for an error
+int solve(char *words, string_info info[], blank_info cross_info[], int num_words)
+{
+    // find the first unassigned string
+    int this_word = 0;
+    for(; this_word < num_words; this_word++)
+    {
+        if(!info[this_word].found)
+            break;
+    }
+    if(this_word == num_words) // all of the words have been found
+        return 0;
+
+    // find a blank for that word
+    for(int this_blank = 0; this_blank < num_words; this_blank++)
+    {
+        // find a blank that is empty with the same length as the word
+        if( cross_info[this_blank].string == -1 && 
+            cross_info[this_blank].length == info[this_word].length) 
+        {
+            // temporarily assign the word to this blank
+            cross_info[this_blank].string = this_word;
+            info[this_word].found = true;
+            bool fits = true; 
+
+            // find any crossing words and check if they don't fit
+            for(int other_blank = 0; other_blank < num_words; other_blank++)
+            {
+                // if other is not empty (ensures they are not the same blank)
+                // and is the opposite orientation of this
+                if( cross_info[other_blank].string != -1 &&
+                    cross_info[this_blank].orientation != cross_info[other_blank].orientation)
+                {
+                    // identify which one is horizontal and which is vertical
+                    blank_info *horizontal;
+                    blank_info *vertical;
+                    if(cross_info[this_blank].orientation == 0)
+                    {
+                        horizontal = &cross_info[this_blank];
+                        vertical   = &cross_info[other_blank];
+                    }
+                    else
+                    {
+                        horizontal = &cross_info[other_blank];
+                        vertical   = &cross_info[this_blank];
+                    }
+
+                    // check if they intersect
+                    if( horizontal->x <= vertical->x && 
+                        vertical->x < horizontal->x + horizontal->length &&
+                        vertical->y <= horizontal->y &&
+                        horizontal->y < vertical->y + vertical->length)
+                    {
+                        // (x, y) of intersection : x = vertical->x , y = horizontal->y
+
+                        // check if the intersecting character is different
+                        if( *(words+info[vertical->string].index+(horizontal->y - vertical->y)) !=
+                            *(words+info[horizontal->string].index+(vertical->x - horizontal->x)))
+                        {   
+                            fits = false; 
+                            break; 
+                        } // if they're different, the word doesn't fit
+                    }
+                }
+            }
+            // if the alg. got here and fits is true, there were no known conflicts
+
+            // try to solve the rest of the crossword assuming this_word in this_blank
+            if(fits && solve(words, info, cross_info, num_words) == 0) // if solved
+                break; 
+
+            // if here, this fit is not a solution
+            cross_info[this_blank].string = -1; 
+            info[this_word].found = false;
+        }
+    }
+
+    if(info[this_word].found)
+        return 0;
+    else
+        return 1; // if a blank was not found for the word, return an error;
+}
+
+char** crosswordPuzzle(int crossword_count, char** crossword, char* words, int* result_count) 
+{
+    // the words in char* words are referred to using their order in words, starting with 0
+    int this_word, num_words;
+    string_info info[crossword_count];
+
+    // calculate string_index and string_length values
+        info[0].index = 0;
+
+        this_word = 0;
+        int character = 1;
+        while (words[character] != 0 )
+        {
+            if(words[character] == ';')
+            {
+                info[this_word].length = character - info[this_word].index;
+                info[++this_word].index = ++character; // next word begins at next char
+            }
+            character++;
+        }
+        info[this_word].length = character - info[this_word].index; 
+            // update length for the last str
+        num_words = this_word + 1;
+
+    
+    // initialize crossword_info values
+        blank_info crossword_info[num_words];
+
+        this_word = 0;
+        for(int y=0; y < 10; y++)
+        {
+            for(int x = 0; x < 10; x++)
+            {
+                if(this_word == num_words)
+                    break;
+
+                if(crossword[y][x] == '-')
+                {
+                    if(  x != 9 && crossword[y][x+1] == '-' && // found a horizontal word
+                        (x == 0 || crossword[y][x-1] != '-'))  // and its the first letter
+                    {
+                        int this_x = x;
+                        int length = 0;
+                        while (this_x < 10 && crossword[y][this_x] == '-')
+                        {
+                            length++; this_x++;
+                        }
+                        crossword_info[this_word].x = x;
+                        crossword_info[this_word].y = y;
+                        crossword_info[this_word].length = length;
+                        crossword_info[this_word].orientation = 0;
+                        crossword_info[this_word].string = -1;
+                        //display_blank_info(crossword_info, this_word);
+                        this_word++;
+                    }
+                    if(  y != 9 && crossword[y+1][x] == '-' && // found a vertical word
+                        (y == 0 || crossword[y-1][x] != '-'))  // and its the first letter
+                    {
+                        int this_y = y;
+                        int length = 0;
+                        while (this_y < 10 && crossword[this_y][x] == '-')
+                        {
+                            length++; this_y++;
+                        }
+                        crossword_info[this_word].x = x;
+                        crossword_info[this_word].y = y;
+                        crossword_info[this_word].length = length;
+                        crossword_info[this_word].orientation = 1;
+                        crossword_info[this_word].string = -1;
+                        //display_blank_info(crossword_info, this_word);
+                        this_word++;
+                    }
+                }
+            }
+        }
+
+    // places the strings with unique lengths
+        // puts the words with length frequency 1 at beginning of check_order
+        // so that the algorithm solves the crossword faster
+        for(this_word = 0; this_word < num_words; this_word++)
+        {
+            bool unique = true;
+            for(int other_word = 0; other_word < num_words; other_word++)
+            {
+                if( this_word != other_word &&
+                    info[this_word].length == info[other_word].length){
+                    unique = false; break; }
+            }
+
+            if(unique)
+            {
+                // check each blank word for the corresponding length, and solve that word
+                for(int blank_word = 0; blank_word < num_words; blank_word++)
+                {
+                    if(crossword_info[blank_word].length == info[this_word].length){
+                        crossword_info[blank_word].string = this_word; break; }
+                }
+
+                info[this_word].found = true;
+            }
+            else
+                info[this_word].found = false;
+        }
+
+    // find crossword solution and fill the "string" field of blank_info
+        solve(words, info, crossword_info, num_words);
+
+    // fill the crossword and return
+        *result_count = 10;
+        for(int this_blank = 0; this_blank < num_words; this_blank++)
+        {
+            int x = crossword_info[this_blank].x;
+            int y = crossword_info[this_blank].y;
+
+            for(int index = 0; index < crossword_info[this_blank].length; index++)
+            {
+                crossword[y][x]= *(words+info[crossword_info[this_blank].string].index + index);
+                if(crossword_info[this_blank].orientation == 0)
+                    x++;
+                else
+                    y++;
+            }
+        }
+    
+    return crossword;
+}
+
+int main()
+{
+    FILE* fptr = fopen(getenv("OUTPUT_PATH"), "w");
+
+    char** crossword = malloc(10 * sizeof(char*));
+
+    for (int i = 0; i < 10; i++) {
+        char* crossword_item = readline();
+
+        *(crossword + i) = crossword_item;
+    }
+
+    int crossword_count = 10;
+
+    char* words = readline();
+
+    int result_count;
+    char** result = crosswordPuzzle(crossword_count, crossword, words, &result_count);
+
+    for (int i = 0; i < result_count; i++) {
+        fprintf(fptr, "%s", *(result + i));
+
+        if (i != result_count - 1) {
+            fprintf(fptr, "\n");
+        }
+    }
+
+    fprintf(fptr, "\n");
+
+    fclose(fptr);
+
+    return 0;
+}
+
+char* readline() {
+    size_t alloc_length = 1024;
+    size_t data_length = 0;
+    char* data = malloc(alloc_length);
+
+    while (true) {
+        char* cursor = data + data_length;
+        char* line = fgets(cursor, alloc_length - data_length, stdin);
+
+        if (!line) {
+            break;
+        }
+
+        data_length += strlen(cursor);
+
+        if (data_length < alloc_length - 1 || data[data_length - 1] == '\n') {
+            break;
+        }
+
+        alloc_length <<= 1;
+
+        data = realloc(data, alloc_length);
+
+        if (!line) {
+            break;
+        }
+    }
+
+    if (data[data_length - 1] == '\n') {
+        data[data_length - 1] = '\0';
+
+        data = realloc(data, data_length);
+    } else {
+        data = realloc(data, data_length + 1);
+
+        data[data_length] = '\0';
+    }
+
+    return data;
+}
